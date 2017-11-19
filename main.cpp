@@ -1,15 +1,15 @@
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
+#include <llvm/ExecutionEngine/JITSymbol.h>
 #include <llvm/ExecutionEngine/OrcMCJITReplacement.h>
 #include <llvm/ExecutionEngine/Orc/CompileUtils.h>
-#include <llvm/ExecutionEngine/Orc/ObjectLinkingLayer.h>
+#include <llvm/ExecutionEngine/Orc/RTDyldObjectLinkingLayer.h>
 #include <llvm/ExecutionEngine/RTDyldMemoryManager.h>
 #include <llvm/ExecutionEngine/SectionMemoryManager.h>
 #include <llvm/Support/DynamicLibrary.h>
 #include <llvm/Support/TargetSelect.h>
 
 
-// #include "llvm/Bitcode/BitcodeReader.h"
-#include <llvm/Bitcode/ReaderWriter.h>
+#include <llvm/Bitcode/BitcodeReader.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
 #include <llvm/Support/MemoryBuffer.h>
@@ -43,18 +43,18 @@ std::unique_ptr<Module> loadModuleAtPath(const std::string &path) {
   return std::move(module.get());
 }
 
-class Resolver : public RuntimeDyld::SymbolResolver {
+class Resolver : public JITSymbolResolver {
 public:
 
-  RuntimeDyld::SymbolInfo findSymbol(const std::string &Name) {
+  JITSymbol findSymbol(const std::string &Name) {
     if (auto SymAddr = RTDyldMemoryManager::getSymbolAddressInProcess(Name))
-      return RuntimeDyld::SymbolInfo(SymAddr, JITSymbolFlags::Exported);
+      return JITSymbol(SymAddr, JITSymbolFlags::Exported);
 
-    return RuntimeDyld::SymbolInfo(nullptr);
+    return JITSymbol(nullptr);
   }
 
-  RuntimeDyld::SymbolInfo findSymbolInLogicalDylib(const std::string &Name) {
-    return RuntimeDyld::SymbolInfo(nullptr);
+  JITSymbol findSymbolInLogicalDylib(const std::string &Name) {
+    return JITSymbol(nullptr);
   }
 };
 
@@ -82,21 +82,17 @@ int main(int argc, char **argv) {
 
   SimpleCompiler compiler(*targetMachine);
 
-  OwningBinary<ObjectFile> objectFile = compiler(*module);
+  auto objectFile = std::make_shared<OwningBinary<ObjectFile>>(compiler(*module));
 
-  ObjectLinkingLayer<> objectLayer;
+  RTDyldObjectLinkingLayer objectLayer([]() { return std::make_shared<SectionMemoryManager>(); });
 
-  vector<ObjectFile *> objectFiles;
-  objectFiles.push_back(objectFile.getBinary());
-
-  auto handle = objectLayer.addObjectSet(objectFiles,
-                                        make_unique<SectionMemoryManager>(),
-                                        make_unique<Resolver>());
+  auto handle = objectLayer.addObject(std::move(objectFile),
+                                      make_unique<Resolver>());
 
   JITSymbol symbol = objectLayer.findSymbol("_main", false);
 
   void *mainPointer =
-    reinterpret_cast<void *>(static_cast<uintptr_t>(symbol.getAddress()));
+    reinterpret_cast<void *>(static_cast<uintptr_t>(symbol.getAddress().get()));
 
   if (mainPointer == nullptr) {
     cerr << "CustomTestRunner> Can't find pointer to _main\n";
@@ -108,7 +104,7 @@ int main(int argc, char **argv) {
   auto mainFunction = ((int (*)(int, const char**))(intptr_t)mainPointer);
   int exitStatus = mainFunction(jitArgc, jitArgv);
 
-  objectLayer.removeObjectSet(handle);
+  objectLayer.removeObject(handle.get());
 
   return 0;
 }

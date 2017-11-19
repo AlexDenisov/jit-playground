@@ -1,8 +1,9 @@
-CXX=/opt/llvm-3.9/bin/clang++
-LLVM_CONFIG=/opt/llvm-3.9/bin/llvm-config
+LLVM_VERSION=5.0
+CXX=/opt/llvm-$(LLVM_VERSION)/bin/clang++
+LLVM_CONFIG=/opt/llvm-$(LLVM_VERSION)/bin/llvm-config
 
 CXX_FLAGS=$(shell $(LLVM_CONFIG) --cxxflags)
-LD_FLAGS=$(shell $(LLVM_CONFIG) --ldflags) -lz -lncurses
+LD_FLAGS=$(shell $(LLVM_CONFIG) --ldflags) -lz -lncurses -lc
 LIBS=$(shell $(LLVM_CONFIG) --libs)
 BITCODE_FLAGS=-c -emit-llvm
 
