@@ -58,7 +58,13 @@ public:
   }
 };
 
-int main() {
+int main(int argc, char **argv) {
+  if (argc != 2) {
+    cerr << "Usage: \n"
+      "\t./jitter path_to_bitcode_file.bc\n";
+    exit(1);
+  }
+
   InitializeNativeTarget();
   InitializeNativeTargetAsmPrinter();
   InitializeNativeTargetAsmParser();
@@ -68,7 +74,7 @@ int main() {
                                 EngineBuilder().selectTarget(Triple(), "", "",
                                 SmallVector<std::string, 1>()));
 
-  auto module = loadModuleAtPath("./module.bc");
+  auto module = loadModuleAtPath(argv[1]);
 
   if (module->getDataLayout().isDefault()) {
     module->setDataLayout(targetMachine->createDataLayout());
@@ -97,10 +103,10 @@ int main() {
     exit(1);
   }
 
-  const char *argv[] = { "jit", NULL };
-  int argc = 1;
+  const char *jitArgv[] = { "jit", NULL };
+  int jitArgc = 1;
   auto mainFunction = ((int (*)(int, const char**))(intptr_t)mainPointer);
-  int exitStatus = mainFunction(argc, argv);
+  int exitStatus = mainFunction(jitArgc, jitArgv);
 
   objectLayer.removeObjectSet(handle);
 
