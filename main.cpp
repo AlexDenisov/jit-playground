@@ -66,7 +66,7 @@ public:
 int main(int argc, char **argv) {
   if (argc != 2) {
     cerr << "Usage: \n"
-      "\t./jitter path_to_bitcode_file.bc\n";
+      "\t./jitter path_to_object_file.o\n";
     exit(1);
   }
 
@@ -79,19 +79,38 @@ int main(int argc, char **argv) {
                                 EngineBuilder().selectTarget(Triple(), "", "",
                                 SmallVector<std::string, 1>()));
 
-  auto module = loadModuleAtPath(argv[1]);
+  /* auto module = loadModuleAtPath(argv[1]); */
 
-  if (module->getDataLayout().isDefault()) {
-    module->setDataLayout(targetMachine->createDataLayout());
-  }
+  /* if (module->getDataLayout().isDefault()) { */
+  /*   module->setDataLayout(targetMachine->createDataLayout()); */
+  /* } */
 
-  SimpleCompiler compiler(*targetMachine);
 
-  auto objectFile = std::make_shared<OwningBinary<ObjectFile>>(compiler(*module));
+    ErrorOr<std::unique_ptr<MemoryBuffer>> buffer =
+      MemoryBuffer::getFile(argv[1]);
+
+    if (!buffer) {
+      cerr << "Cannot load object file" << "\n";
+    }
+
+    Expected<std::unique_ptr<ObjectFile>> objectOrError =
+      ObjectFile::createObjectFile(buffer.get()->getMemBufferRef());
+
+    if (!objectOrError) {
+      cerr << "Cannot create object file" << "\n";
+    }
+
+    std::unique_ptr<ObjectFile> objectFile(std::move(objectOrError.get()));
+
+    auto owningObject = OwningBinary<ObjectFile>(std::move(objectFile),
+                                                 std::move(buffer.get()));
+
+  auto sharedObjectFile = std::make_shared<OwningBinary<ObjectFile>>(std::move(objectFile),
+                                                                    std::move(buffer.get()));
 
   RTDyldObjectLinkingLayer objectLayer([]() { return std::make_shared<SectionMemoryManager>(); });
 
-  auto handle = objectLayer.addObject(std::move(objectFile),
+  auto handle = objectLayer.addObject(std::move(sharedObjectFile),
                                       make_unique<Resolver>());
 
   JITSymbol symbol = objectLayer.findSymbol("_main", false);
