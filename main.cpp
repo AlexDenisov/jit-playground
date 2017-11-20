@@ -74,20 +74,39 @@ int main(int argc, char **argv) {
                                 EngineBuilder().selectTarget(Triple(), "", "",
                                 SmallVector<std::string, 1>()));
 
-  auto module = loadModuleAtPath(argv[1]);
+  /* auto module = loadModuleAtPath(argv[1]); */
 
-  if (module->getDataLayout().isDefault()) {
-    module->setDataLayout(targetMachine->createDataLayout());
-  }
+  /* if (module->getDataLayout().isDefault()) { */
+  /*   module->setDataLayout(targetMachine->createDataLayout()); */
+  /* } */
 
-  SimpleCompiler compiler(*targetMachine);
+  /* SimpleCompiler compiler(*targetMachine); */
 
-  OwningBinary<ObjectFile> objectFile = compiler(*module);
+    ErrorOr<std::unique_ptr<MemoryBuffer>> buffer =
+      MemoryBuffer::getFile(argv[1]);
+
+    if (!buffer) {
+      cerr << "Cannot load object file" << "\n";
+      exit(1);
+    }
+
+    Expected<std::unique_ptr<ObjectFile>> objectOrError =
+      ObjectFile::createObjectFile(buffer.get()->getMemBufferRef());
+
+    if (!objectOrError) {
+      cerr << "Cannot create object file" << "\n";
+      exit(1);
+    }
+
+    std::unique_ptr<ObjectFile> objectFile(std::move(objectOrError.get()));
+
+    auto owningObject = OwningBinary<ObjectFile>(std::move(objectFile),
+                                                 std::move(buffer.get()));
 
   ObjectLinkingLayer<> objectLayer;
 
   vector<ObjectFile *> objectFiles;
-  objectFiles.push_back(objectFile.getBinary());
+  objectFiles.push_back(owningObject.getBinary());
 
   auto handle = objectLayer.addObjectSet(objectFiles,
                                         make_unique<SectionMemoryManager>(),
