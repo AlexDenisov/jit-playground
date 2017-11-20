@@ -18,10 +18,16 @@
 #include <iostream>
 #include <vector>
 
+#include <sys/time.h>
+#include <sys/resource.h>
+
+
+#if 1
 /// Monkey-patch MacOS 10.13 API
 #include <fcntl.h> /* Definition of AT_* constants */
 #include <sys/stat.h>
 extern "C" int futimens(int fd, const struct timespec times[2]) { return 0; }
+#endif
 
 using namespace std;
 using namespace llvm;
@@ -63,6 +69,12 @@ public:
   }
 };
 
+void reportMemoryUsage(const char *context) {
+  struct rusage r;
+  getrusage(RUSAGE_SELF, &r);
+  printf("[%s] max rss: %ldmb\n", context, r.ru_maxrss / 1024 / 1024);
+}
+
 int main(int argc, char **argv) {
   if (argc != 2) {
     cerr << "Usage: \n"
@@ -87,29 +99,12 @@ int main(int argc, char **argv) {
 
   SimpleCompiler compiler(*targetMachine);
 
-  auto objectFile = std::make_shared<OwningBinary<ObjectFile>>(compiler(*module));
-
-  RTDyldObjectLinkingLayer objectLayer([]() { return std::make_shared<SectionMemoryManager>(); });
-
-  auto handle = objectLayer.addObject(std::move(objectFile),
-                                      make_unique<Resolver>());
-
-  JITSymbol symbol = objectLayer.findSymbol("_main", false);
-
-  void *mainPointer =
-    reinterpret_cast<void *>(static_cast<uintptr_t>(symbol.getAddress().get()));
-
-  if (mainPointer == nullptr) {
-    cerr << "CustomTestRunner> Can't find pointer to _main\n";
-    exit(1);
+  for (int i = 0; i < 1000; i++) {
+    reportMemoryUsage("before");
+    __unused auto objectFile = compiler(*module);
+    reportMemoryUsage("after");
   }
 
-  const char *jitArgv[] = { "jit", NULL };
-  int jitArgc = 1;
-  auto mainFunction = ((int (*)(int, const char**))(intptr_t)mainPointer);
-  int exitStatus = mainFunction(jitArgc, jitArgv);
-
-  objectLayer.removeObject(handle.get());
 
   return 0;
 }
