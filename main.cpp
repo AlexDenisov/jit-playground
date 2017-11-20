@@ -28,26 +28,6 @@ using namespace llvm;
 using namespace llvm::orc;
 using namespace llvm::object;
 
-static LLVMContext GlobalContext;
-
-std::unique_ptr<Module> loadModuleAtPath(const std::string &path) {
-  auto bufferOrError = MemoryBuffer::getFile(path);
-  if (!bufferOrError) {
-    cerr << "Can't load module " << path << '\n';
-    exit(1);
-    return nullptr;
-  }
-
-  auto module = parseBitcodeFile(bufferOrError->get()->getMemBufferRef(), GlobalContext);
-  if (!module) {
-    cerr << "Can't parse bitcode " << path << '\n';
-    exit(1);
-    return nullptr;
-  }
-
-  return std::move(module.get());
-}
-
 class Resolver : public JITSymbolResolver {
 public:
 
@@ -79,31 +59,24 @@ int main(int argc, char **argv) {
                                 EngineBuilder().selectTarget(Triple(), "", "",
                                 SmallVector<std::string, 1>()));
 
-  /* auto module = loadModuleAtPath(argv[1]); */
+  ErrorOr<std::unique_ptr<MemoryBuffer>> buffer =
+    MemoryBuffer::getFile(argv[1]);
 
-  /* if (module->getDataLayout().isDefault()) { */
-  /*   module->setDataLayout(targetMachine->createDataLayout()); */
-  /* } */
+  if (!buffer) {
+    cerr << "Cannot load object file" << "\n";
+  }
 
+  Expected<std::unique_ptr<ObjectFile>> objectOrError =
+    ObjectFile::createObjectFile(buffer.get()->getMemBufferRef());
 
-    ErrorOr<std::unique_ptr<MemoryBuffer>> buffer =
-      MemoryBuffer::getFile(argv[1]);
+  if (!objectOrError) {
+    cerr << "Cannot create object file" << "\n";
+  }
 
-    if (!buffer) {
-      cerr << "Cannot load object file" << "\n";
-    }
+  std::unique_ptr<ObjectFile> objectFile(std::move(objectOrError.get()));
 
-    Expected<std::unique_ptr<ObjectFile>> objectOrError =
-      ObjectFile::createObjectFile(buffer.get()->getMemBufferRef());
-
-    if (!objectOrError) {
-      cerr << "Cannot create object file" << "\n";
-    }
-
-    std::unique_ptr<ObjectFile> objectFile(std::move(objectOrError.get()));
-
-    auto owningObject = OwningBinary<ObjectFile>(std::move(objectFile),
-                                                 std::move(buffer.get()));
+  auto owningObject = OwningBinary<ObjectFile>(std::move(objectFile),
+                                               std::move(buffer.get()));
 
   auto sharedObjectFile = std::make_shared<OwningBinary<ObjectFile>>(std::move(objectFile),
                                                                     std::move(buffer.get()));
