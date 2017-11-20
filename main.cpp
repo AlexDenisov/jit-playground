@@ -18,6 +18,11 @@
 #include <iostream>
 #include <vector>
 
+/// Monkey-patch MacOS 10.13 API
+#include <fcntl.h> /* Definition of AT_* constants */
+#include <sys/stat.h>
+extern "C" int futimens(int fd, const struct timespec times[2]) { return 0; }
+
 using namespace std;
 using namespace llvm;
 using namespace llvm::orc;
